@@ -110,7 +110,7 @@ def InsertByVar(objList, newObj): #insert element in list based on time
 #setup
 time = 0
 c = 16 #servers
-serverCapacity = 8
+serverCapacity = 1 #server internal queues (ignore, not needed)
 customersServed = []
 servers = []
 eventList = []
