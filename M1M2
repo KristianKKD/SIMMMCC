@@ -1,96 +1,58 @@
-import random
+import numpy.random as random
+import Events
+import SharedFunctions
+import ServerCustomer
 
-ARRIVAL = 1
-DEPARTURE = 2
-
-class Customer:
-    time = 0 #arrivalTime, named this to save me from having to rewrite the same function twice
-    departureTime = 0 #time the customer left our system
-    serviceStartTime = 0 #time the customer began service (after waiting)
-    waitedTime = 0 #time between customer arrival and service
-    serviceTime = 0 #time the customer was using our service
-    timeInServer = 0 #total time in our servers
-
-    def __init__(self, arrivalTime):
-        self.time = arrivalTime
-
-    def Serve(self, startServiceTime, serviceRate):
-        self.waitedTime = startServiceTime - self.time
-        self.serviceStartTime = startServiceTime
-        self.departureTime = startServiceTime + random.expovariate(1 / serviceRate)
-        self.serviceTime = self.departureTime - self.serviceStartTime
-        self.timeInServer = self.departureTime - self.time
-        return self.departureTime
-
-class Event:
-    type = DEPARTURE
-    time = 0
-    relevantCustomer = None
-
-    def __init__(self, type, time, customer):
-        self.type = type
-        self.time = time
-        self.relevantCustomer = customer
-
-class Server:
-    busyUntil = 0 #time this channel is busy for
-
-    def Serve(self, customer, time, serviceRate): #a customer has arrived and has been assigned to this server
-        customerDeparture = customer.Serve(time, serviceRate)
-        self.busyUntil = customerDeparture
-        return Event(DEPARTURE, customerDeparture, customer)
-
-def GetServer(servers): #get the most available server
+def GetServer(servers, time, customerType): #get the most available server
     bestServer = None
     bestScore = 0
+    serversAvailable = len(servers)
+
     for s in servers: #compare every server to find the best
         sBusyUntil = s.busyUntil #higher is worse
-        if bestServer == None or sBusyUntil < bestScore: #if this server is less busy (and exists)
+        
+        if time < sBusyUntil: #track if the server is unavailable for treshold blocking
+            serversAvailable -= 1
+
+        if time >= sBusyUntil and (bestServer == None or sBusyUntil < bestScore): #if this server is less busy (and exists)
             bestServer = s #least busy server
             bestScore = sBusyUntil
+
+    #blocking treshold
+    if customerType == ServerCustomer.NEW and serversAvailable <= 2: #N > 2 then accept the call, otherwise block it (return None)
+        bestServer = None
+    
     return bestServer
 
-def InsertByVar(objList, newObj): #insert element in list based on time
-    #find relevant position where the obj should be placed
-    i = 0
-    for i, obj in enumerate(objList):
-        if obj.time >= newObj.time: #new element is worse than this element
-            break #break and use the i index
-        elif i == len(objList) - 1: #this is the highest time
-            i += 1 #raise the index so it gets placed at the end
-
-    #insert the new obj in the correct position
-    objList.insert(i, newObj)
-    return objList
-
-
-def Simulate(arrivalRate):
+def SimulateM1M2MCC(arrivalRate, handoverRate, serviceRate, timeMax, c):
     #setup
     time = 0
-    c = 16 #servers
-    customersServed = []
-    customersBlocked = []
+    arrivalsServed = []
+    handoversServed = []
+    arrivalsBlocked = []
+    handoversBlocked = []
     servers = []
     eventList = []
 
-    serviceRate = 100
-    timeMax = 3000
-
     for i in range(c):
-        servers.append(Server())
+        servers.append(ServerCustomer.Server())
 
-    nextArrival = 0
+    #simulate
+    newArrival = 0
+    handover = 0
     while time < timeMax:
-        #generate customer
-        if nextArrival <= time:
-            customer = Customer(time)
-            nextArrival = time + random.expovariate(1 / arrivalRate)
-            eventList = InsertByVar(eventList, Event(ARRIVAL, time, customer))
+        #if the server has nothing to do or it is time to generate a customer
+        if newArrival <= time or handover <= time or len(eventList) == 0 or (len(eventList) > 0 and eventList[0].time > newArrival):
+            time = newArrival
 
-        #if the server has nothing to do, idle until next customer comes, alternatively if it is waiting for too long also have a customer arrive
-        if len(eventList) == 0 or (len(eventList) > 0 and eventList[0].time > nextArrival):
-            time = nextArrival
-            continue
+            if newArrival < handover: #newArrival event
+                customer = ServerCustomer.Customer(time, ServerCustomer.NEW)
+                newArrival += random.poisson(1/arrivalRate, size=1)
+            else: #handover event
+                customer = ServerCustomer.Customer(time, ServerCustomer.HANDOVER)
+                handover += random.poisson(1/handoverRate, size=1)
+
+            eventList = SharedFunctions.InsertByVar(eventList, Events.Event(Events.ARRIVAL, time, customer))
 
         #gather event stats
         event = eventList[0] #ARRIVAL, DEPARTURE
@@ -100,38 +62,72 @@ def Simulate(arrivalRate):
 
         #depending on the event type, decide what to do
         departureEvent = None #we may have a departure event if we successfully queued a customer
-        if eventType == ARRIVAL: #customer has just arrived, assign them to a server
+        if eventType == Events.ARRIVAL: #customer has just arrived, assign them to a server
             #find an available server
-            nextServer = GetServer(servers) 
-            if nextServer != None: #all servers are busy
-                customersBlocked.append(customer)
+            nextServer = GetServer(servers, time, customer.type) 
+            if nextServer == None: #servers are too busy
+                if customer.type == ServerCustomer.NEW: #call blocked
+                    arrivalsBlocked.append(customer)
+                else: #handover blocked
+                    handoversBlocked.append(customer)
             else:
                 #assign the customer to the relevant server and start the server processing
                 departureEvent = nextServer.Serve(customer, time, serviceRate) #departure event of this customer
-        elif eventType == DEPARTURE: #customer has just finished being served
-            customersServed.append(customer)
+        elif eventType == Events.DEPARTURE: #customer has just finished being served
+            if customer.type == ServerCustomer.NEW: #call success
+                arrivalsServed.append(customer)
+            else: #handover success
+                handoversServed.append(customer)
 
         eventList.remove(event)
 
         if departureEvent != None: 
-            eventList = InsertByVar(eventList, departureEvent) #append when the server will be finished
+            eventList = SharedFunctions.InsertByVar(eventList, departureEvent) #append when the server will be finished with next customer
 
-    return (customersServed, customersBlocked)
+    #data collection
+    cumuServerBusy = 0
+    for s in servers:
+        cumuServerBusy += s.timeSpentBusy
 
+    cbd = len(arrivalsBlocked) / (len(arrivalsBlocked) + len(arrivalsServed)) #call blocking probability
+    hfp = len(handoversBlocked) / (len(handoversBlocked) + len(handoversServed)) #handover failure probability
+
+    return cbd, hfp
 
 random.seed(5) #set the randomness to be consistent
+timeMax = 1000
+c = 16 #servers
+serviceRate = 100
 
-results = []
-for i in range(10):
-    arrivalRate = 0.1 * i
-    customersServed, customersBlocked = Simulate(arrivalRate)
-    results.append((arrivalRate, customersServed, customersBlocked))
+#2.2
+"""
+arrivalRate = 0.1
+handoverRate = 0.0001
 
-totalTimeWaited = 0.00001
-totalTimeServing = 0
+highestABP = 0
+iterations = 0
+while highestABP <= 0.2 or iterations > 99999: #loop until this value exceeds a threshold
+    iterations += 1
+    handoverRate *= iterations
+    cbp, hfp = SimulateM1M2MCC(arrivalRate, handoverRate, serviceRate, timeMax, c)
+    abp = cbp + 10 * hfp #aggregated blocking probability
+    highestABP = abp if abp > highestABP else highestABP #set the new highest
 
-for c in customersServed:
-    totalTimeWaited += c.waitedTime
-    totalTimeServing += c.serviceTime
+print("Highest ABP<0.2 handover rate:", handoverRate, ", Next ABP:", highestABP)
+"""
 
-print("Done")
+#2.3
+arrivalRate = 0.0001
+handoverRate = 0.03
+
+highestABP = 0
+iterations = 0
+while highestABP <= 0.2 or iterations > 99999: #loop until this value exceeds a threshold
+    iterations += 1
+    arrivalRate *= iterations
+    cbp, hfp = SimulateM1M2MCC(arrivalRate, handoverRate, serviceRate, timeMax, c)
+    abp = cbp + 10 * hfp #aggregated blocking probability
+    highestABP = abp if abp > highestABP else highestABP #set the new highest
+
+
+print("Highest ABP<0.2 arrival rate:", arrivalRate, ", Next ABP:", highestABP)
