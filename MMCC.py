@@ -95,7 +95,7 @@ plt.figure(figsize=(12, 6))
 
 #blocking probability as arrival rate increases
 plt.subplot(1, 2, 1)
-plt.plot(arrivalRates, blockingProbabilities) 
+plt.plot(arrivalRates, blockingProbabilities)
 plt.title('Blocking Probability vs Arrival Rate')
 plt.xlabel('Arrival Rate (calls/second)')
 plt.ylabel('Blocking Probability')

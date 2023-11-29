@@ -93,11 +93,13 @@ def SimulateM1M2MCC(arrivalRate, handoverRate, serviceRate, timeMax, c):
 
     return cbd, hfp
 
+#setup
 random.seed(5) #set the randomness to be consistent
 timeMax = 1000
 c = 16 #servers
 serviceRate = 100
 
+#simulate
 #2.2
 arrivalRate = 0.1
 handoverRate = 0.0001
