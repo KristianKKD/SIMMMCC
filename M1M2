@@ -1,6 +1,5 @@
 import numpy.random as random
 import Events
-import SharedFunctions
 import ServerCustomer
 
 def GetServer(servers, time, customerType): #get the most available server
@@ -39,20 +38,20 @@ def SimulateM1M2MCC(arrivalRate, handoverRate, serviceRate, timeMax, c):
 
     #simulate
     newArrival = 0
-    handover = 0
+    newHandover = 0
     while time < timeMax:
         #if the server has nothing to do or it is time to generate a customer
-        if newArrival <= time or handover <= time or len(eventList) == 0 or (len(eventList) > 0 and eventList[0].time > newArrival):
+        if time >= newArrival or time >= newHandover or len(eventList) == 0 or (len(eventList) > 0 and eventList[0].time > newArrival):
             time = newArrival
 
-            if newArrival < handover: #newArrival event
-                customer = ServerCustomer.Customer(time, ServerCustomer.NEW)
-                newArrival += random.poisson(1/arrivalRate, size=1)
+            if newArrival < newHandover: #newArrival event
+                customer = ServerCustomer.Customer(ServerCustomer.NEW)
+                newArrival += float(random.poisson(1/arrivalRate, size=1))
             else: #handover event
-                customer = ServerCustomer.Customer(time, ServerCustomer.HANDOVER)
-                handover += random.poisson(1/handoverRate, size=1)
+                customer = ServerCustomer.Customer(ServerCustomer.HANDOVER)
+                newHandover += float(random.poisson(1/handoverRate, size=1))
 
-            eventList = SharedFunctions.InsertByVar(eventList, Events.Event(Events.ARRIVAL, time, customer))
+            eventList = Events.InsertEvent(eventList, Events.Event(Events.ARRIVAL, time, customer))
 
         #gather event stats
         event = eventList[0] #ARRIVAL, DEPARTURE
@@ -82,7 +81,7 @@ def SimulateM1M2MCC(arrivalRate, handoverRate, serviceRate, timeMax, c):
         eventList.remove(event)
 
         if departureEvent != None: 
-            eventList = SharedFunctions.InsertByVar(eventList, departureEvent) #append when the server will be finished with next customer
+            eventList = Events.InsertEvent(eventList, departureEvent) #append when the server will be finished with next customer
 
     #data collection
     cumuServerBusy = 0
@@ -100,21 +99,22 @@ c = 16 #servers
 serviceRate = 100
 
 #2.2
-"""
 arrivalRate = 0.1
 handoverRate = 0.0001
 
 highestABP = 0
 iterations = 0
-while highestABP <= 0.2 or iterations > 99999: #loop until this value exceeds a threshold
+while iterations < 99999: #avoid being trapped here forever
     iterations += 1
-    handoverRate *= iterations
-    cbp, hfp = SimulateM1M2MCC(arrivalRate, handoverRate, serviceRate, timeMax, c)
+    cbp, hfp = SimulateM1M2MCC(arrivalRate, handoverRate * iterations, serviceRate, timeMax, c)
     abp = cbp + 10 * hfp #aggregated blocking probability
+    
+    if abp >= 0.02: #loop until this value exceeds a threshold
+        handoverRate *= iterations - 1 #as we have already exceeded the value, the best is iterations-1
+        break
     highestABP = abp if abp > highestABP else highestABP #set the new highest
 
-print("Highest ABP<0.2 handover rate:", handoverRate, ", Next ABP:", highestABP)
-"""
+print("Highest handover rate where ABP<0.02:", handoverRate, "with an ABP of:", highestABP) #handover rate 0.0004
 
 #2.3
 arrivalRate = 0.0001
@@ -122,12 +122,14 @@ handoverRate = 0.03
 
 highestABP = 0
 iterations = 0
-while highestABP <= 0.2 or iterations > 99999: #loop until this value exceeds a threshold
+while iterations < 99999: #avoid being trapped here forever
     iterations += 1
-    arrivalRate *= iterations
-    cbp, hfp = SimulateM1M2MCC(arrivalRate, handoverRate, serviceRate, timeMax, c)
+    cbp, hfp = SimulateM1M2MCC(arrivalRate * iterations, handoverRate, serviceRate, timeMax, c)
     abp = cbp + 10 * hfp #aggregated blocking probability
+    
+    if abp >= 0.02: #loop until this value exceeds a threshold
+        arrivalRate *= iterations - 1 #as we have already exceeded the value, the best is iterations-1
+        break
     highestABP = abp if abp > highestABP else highestABP #set the new highest
 
-
-print("Highest ABP<0.2 arrival rate:", arrivalRate, ", Next ABP:", highestABP)
+print("Highest arrival rate where ABP<0.02:", arrivalRate, "with an ABP of:", highestABP) #arrival rate 0.001

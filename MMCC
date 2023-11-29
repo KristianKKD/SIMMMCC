@@ -1,7 +1,6 @@
 import numpy.random as random
 import Events
 import matplotlib.pyplot as plt
-import SharedFunctions
 import ServerCustomer
 
 def GetServer(servers, time): #get the most available server
@@ -29,12 +28,14 @@ def SimulateMMCC(arrivalRate, serviceRate, timeMax, c):
     newArrival = 0
     while time < timeMax:
         #if the server has nothing to do or it is time to generate a customer
-        if newArrival <= time or len(eventList) == 0 or (len(eventList) > 0 and eventList[0].time > newArrival):
-            time = newArrival
-            customer = ServerCustomer.Customer(time)
-            newArrival += float(random.poisson(1/arrivalRate, size=1))
-            eventList = SharedFunctions.InsertByVar(eventList, Events.Event(Events.ARRIVAL, time, customer))
-            continue
+        if time >= newArrival or len(eventList) == 0 or (len(eventList) > 0 and eventList[0].time > newArrival):
+            time = newArrival #set the time to the last arrival event (starts at 0)
+
+            customer = ServerCustomer.Customer() #create customer
+            eventList = Events.InsertEvent(eventList, Events.Event(Events.ARRIVAL, time, customer)) #add the event to the events list
+
+            newArrival += float(random.poisson(1/arrivalRate, size=1)) #set the next arrival depending on a poisson distribution
+            continue #there is a chance that the next event that will occur is still going to be an arrival event so reset the loop
 
         #gather event stats
         event = eventList[0] #ARRIVAL, DEPARTURE
@@ -58,7 +59,7 @@ def SimulateMMCC(arrivalRate, serviceRate, timeMax, c):
         eventList.remove(event)
 
         if departureEvent != None: 
-            eventList = SharedFunctions.InsertByVar(eventList, departureEvent) #append when the server will be finished
+            eventList = Events.InsertEvent(eventList, departureEvent) #append when the server will be finished
 
     cumuServerBusy = 0
     for s in servers:
@@ -70,7 +71,7 @@ def SimulateMMCC(arrivalRate, serviceRate, timeMax, c):
 
     return utilization, blockingProbability
 
-random.seed(5) #set the randomness to be consistent
+random.seed(1) #set the randomness to be consistent
 timeMax = 1000
 c = 16 #servers
 serviceRate = 100
@@ -78,13 +79,16 @@ serviceRate = 100
 arrivalRates = []
 serverUtilization = []
 blockingProbabilities = []
-for i in range(1, 11): #0.1-1
-    arrivalRate = 0.01 * i
+for i in range(1, 101): #0.1-1
+    arrivalRate = 0.001 * i
     util, blocking = SimulateMMCC(arrivalRate, serviceRate, timeMax, c)
 
     arrivalRates.append(arrivalRate)
     serverUtilization.append(util)
     blockingProbabilities.append(blocking)
+
+#1.3
+#maximum input arrivalRate where Blocking Probability < 0.01 is 0.095
 
 #plotting
 plt.figure(figsize=(12, 6))
@@ -99,11 +103,11 @@ plt.grid(True)
 
 #server utilization as arrival rate increases
 plt.subplot(1, 2, 2)
-plt.plot(arrivalRates, serverUtilization, marker='o')
+plt.plot(arrivalRates, serverUtilization)
 plt.title('Server Utilization vs Arrival Rate')
 plt.xlabel('Arrival Rate (calls/second)')
 plt.ylabel('Server Utilization')
 plt.grid(True)
 
-plt.tight_layout()
-plt.show(block=True)
+plt.tight_layout() #compress the image
+plt.show(block=True) #pause the program until we close the shown graphs
